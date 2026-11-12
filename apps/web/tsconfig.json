@@ -1,7 +1,13 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "strict": true
+    "strict": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "noEmit": true,
+    "types": ["vite/client"]
   },
   "include": ["src"]
 }

@@ -7,15 +7,15 @@
   },
   "scripts": {
     "lint": "node scripts/not-implemented.js 0.6 lint",
-    "typecheck": "corepack pnpm --filter api typecheck",
+    "typecheck": "corepack pnpm --filter shared typecheck && corepack pnpm --filter api typecheck && corepack pnpm --filter web typecheck",
     "test": "corepack pnpm --filter api test",
     "test:unit": "corepack pnpm --filter api test",
     "db:migrate": "corepack pnpm --filter api db:migrate",
     "db:seed": "corepack pnpm --filter api db:seed",
     "test:leak": "node scripts/not-implemented.js 0.5 test:leak",
     "test:e2e": "node scripts/not-implemented.js 0.6 test:e2e",
-    "build": "node scripts/not-implemented.js 0.6 build",
-    "dev:api": "node scripts/not-implemented.js 0.2 dev:api",
-    "dev:web": "node scripts/not-implemented.js 0.6 dev:web"
+    "build": "corepack pnpm typecheck && corepack pnpm --filter web build",
+    "dev:api": "corepack pnpm --filter api dev",
+    "dev:web": "corepack pnpm --filter web dev"
   }
 }

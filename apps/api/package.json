@@ -8,12 +8,17 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "tsx src/db/seed.ts --dev",
+    "dev": "tsx src/server.ts",
     "test": "vitest run"
   },
   "dependencies": {
+    "@fastify/cookie": "^11.1.5",
+    "@simplewebauthn/server": "13.3.3",
     "argon2": "^0.45.2",
     "drizzle-orm": "^0.45.4",
-    "postgres": "^4.1.0"
+    "fastify": "^5.12.8",
+    "postgres": "^4.1.0",
+    "shared": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

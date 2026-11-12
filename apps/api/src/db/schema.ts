@@ -214,6 +214,44 @@ export const paymentRecord = pgTable("payment_record", {
     .defaultNow(),
 });
 
+export const webauthnChallenge = pgTable("webauthn_challenge", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  challenge: text("challenge").notNull().unique(),
+  userId: uuid("user_id").references(() => appUser.id),
+  purpose: text("purpose").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true, mode: "date" }).notNull(),
+  usedAt: timestamp("used_at", { withTimezone: true, mode: "date" }),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+    .notNull()
+    .defaultNow(),
+});
+
+export const loginCode = pgTable("login_code", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => appUser.id),
+  codeHash: text("code_hash").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true, mode: "date" }).notNull(),
+  usedAt: timestamp("used_at", { withTimezone: true, mode: "date" }),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+    .notNull()
+    .defaultNow(),
+});
+
+export const knownDevice = pgTable("known_device", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => appUser.id),
+  tokenHash: text("token_hash").notNull().unique(),
+  pinHash: text("pin_hash"),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+    .notNull()
+    .defaultNow(),
+  revokedAt: timestamp("revoked_at", { withTimezone: true, mode: "date" }),
+});
+
 export const setting = pgTable(
   "setting",
   {
