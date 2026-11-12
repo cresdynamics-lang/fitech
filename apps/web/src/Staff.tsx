@@ -88,7 +88,6 @@ export function StaffBoard({
   onRegisterBack: (handler: (() => boolean) | null) => void;
 }) {
   const owner = role === "OWNER";
-  const [mode, setMode] = useState<"people" | "performance">("people");
   const [people, setPeople] = useState<StaffPerson[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -210,27 +209,13 @@ export function StaffBoard({
 
   return (
     <section>
-      <h1>Staff</h1>
+      <h1>Staff and devices</h1>
       <p className="lede">
         {owner
-          ? "People, performance, permissions and the devices they sign in on."
-          : "People and their sales count. Permissions and devices stay with the owner."}
+          ? "Name, role, status, last seen and sign-in. Open a person for permissions and the devices they sign in on."
+          : "Name, role, status, last seen and sign-in. Permissions and devices stay with the owner."}
       </p>
-      <div className="sale-links">
-        <button type="button" className={mode === "people" ? "sale-next" : ""} onClick={() => setMode("people")}>
-          People
-        </button>
-        <button
-          type="button"
-          className={mode === "performance" ? "sale-next" : ""}
-          onClick={() => setMode("performance")}
-        >
-          Performance
-        </button>
-      </div>
-      {mode === "people" ? (
-        <>
-          <div className="variant-groups">
+      <div className="variant-groups">
             {people.map((person) => (
               <button key={person.id} type="button" className="variant" onClick={() => setSelectedId(person.id)}>
                 <strong>
@@ -321,24 +306,6 @@ export function StaffBoard({
               </div>
             )
           ) : null}
-        </>
-      ) : (
-        <div className="variant-groups">
-          {people.map((person) => (
-            <button key={person.id} type="button" className="variant" onClick={() => setSelectedId(person.id)}>
-              <strong>
-                {person.name}
-                <small>{roleLabel(person.role)}</small>
-              </strong>
-              <span>Nothing recorded</span>
-            </button>
-          ))}
-          <p className="hidden-note">
-            Sales, value, last month and average sale are nothing recorded. There is no sale history yet.
-            {owner ? " Gross profit is for the owner, and it is nothing recorded too." : " Profit is not shown."}
-          </p>
-        </div>
-      )}
       {error ? <p className="sale-block">{error}</p> : null}
     </section>
   );
@@ -376,35 +343,6 @@ function PersonDetail({
       <p className="empty">
         Last seen {seen(person.lastSeen)}. Sign-in: {person.signIn}.
       </p>
-      <h2>Performance</h2>
-      <div className="variant">
-        <strong>Sales</strong>
-        <span>Nothing recorded</span>
-      </div>
-      <div className="variant">
-        <strong>Value</strong>
-        <span>Nothing recorded</span>
-      </div>
-      <div className="variant">
-        <strong>Last month</strong>
-        <span>Nothing recorded</span>
-      </div>
-      <div className="variant">
-        <strong>Change</strong>
-        <span>Nothing recorded</span>
-      </div>
-      <div className="variant">
-        <strong>Average sale</strong>
-        <span>Nothing recorded</span>
-      </div>
-      {owner ? (
-        <div className="variant">
-          <strong>Gross profit</strong>
-          <span>Nothing recorded</span>
-        </div>
-      ) : (
-        <p className="hidden-note">Profit, cost and pay are not shown.</p>
-      )}
       <h2>Devices logged in</h2>
       {person.devices.length === 0 && person.sessions.length === 0 ? (
         <p className="empty">No device is signed in.</p>
@@ -477,6 +415,69 @@ function PersonDetail({
         These are chosen when the person is added, and the owner can change them here. Buying price, profit, margins,
         expenses and Lipa totals have no switch. A temporary look at a buying price is 5 minutes to 8 hours, and that
         permission is not named yet. Adding a cost line does not show the figure back.
+      </p>
+      {error ? <p className="sale-block">{error}</p> : null}
+    </section>
+  );
+}
+
+export function PerformanceBoard({
+  role,
+  name,
+}: {
+  role: "OWNER" | "MANAGER" | "CASHIER" | "INVENTORY";
+  name: string;
+}) {
+  const owner = role === "OWNER";
+  const ownOnly = role === "CASHIER";
+  const [people, setPeople] = useState<StaffPerson[]>([]);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (ownOnly) {
+      return;
+    }
+    void fetch("/api/staff")
+      .then(async (response) => {
+        if (!response.ok) {
+          setError(await readError(response));
+          return;
+        }
+        const body = (await response.json()) as { people?: StaffPerson[] };
+        setPeople(body.people ?? []);
+      })
+      .catch(() => setError("Performance could not be loaded."));
+  }, [ownOnly]);
+
+  const rows = ownOnly
+    ? [{ id: "self", name, role }]
+    : people.map((person) => ({ id: person.id, name: person.name, role: person.role }));
+
+  return (
+    <section>
+      <h1>Performance</h1>
+      <p className="lede">
+        {owner
+          ? "Sales, value, last month, change, average sale and gross profit for each person. Profit stays with the owner."
+          : ownOnly
+            ? "Your own sales count. Profit, cost and pay are not shown."
+            : "Each person's sales count. Profit, cost and pay are not shown."}
+      </p>
+      <div className="variant-groups">
+        {rows.map((person) => (
+          <div key={person.id} className="variant">
+            <strong>
+              {person.name}
+              <small>{roleLabel(person.role)}</small>
+            </strong>
+            <span>Sales, value, last month, change, average and target: nothing recorded</span>
+          </div>
+        ))}
+      </div>
+      <p className="hidden-note">
+        {owner
+          ? "Gross profit is for the owner, and it is nothing recorded too. There is no sale history yet."
+          : "There is no sale history yet. Gross profit is not shown."}
       </p>
       {error ? <p className="sale-block">{error}</p> : null}
     </section>

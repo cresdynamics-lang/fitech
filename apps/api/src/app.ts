@@ -16,6 +16,7 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres, { type Sql } from "postgres";
 import { listPartners, createPartner } from "./partners.js";
 import { createStaff, listStaff, revokeAllDevices, revokeDevice, setGrant } from "./staff.js";
+import { devicePassport, listDevices } from "./devices.js";
 import { borrowPhone, listStock } from "./stock.js";
 import { moneyPicture } from "./money.js";
 import {
@@ -373,6 +374,43 @@ export async function buildApp(databaseUrl: string) {
     const query = request.query as { period?: unknown };
     const period = query.period === "last" ? "last" : "month";
     return moneyPicture(sql, period);
+  });
+
+  app.get("/api/devices", async (request) => {
+    await signedIn(request);
+    const query = request.query as { q?: unknown };
+    const q = typeof query.q === "string" ? query.q : "";
+    return { devices: await listDevices(sql, q) };
+  });
+
+  app.get("/api/devices/:id", async (request) => {
+    const actor = await signedIn(request);
+    const params = request.params as { id?: string };
+    const phone = await devicePassport(sql, params.id ?? "");
+    if (!phone) {
+      throw new AuthError(404, "That phone is not recorded.");
+    }
+    let valueOverTime: string | null = null;
+    if (actor.role === "OWNER") {
+      const costs = await sql<{ kind: string; amountKes: number }[]>`
+        select kind, amount_kes as "amountKes"
+        from device_cost_entry
+        where device_id = ${phone.id}
+        order by created_at asc
+      `;
+      const labels: Record<string, string> = {
+        purchase: "Purchase",
+        freight: "Freight",
+        repair: "Repair",
+        parts: "Parts",
+        trade_in_value: "Trade-in value",
+      };
+      valueOverTime =
+        costs.length === 0
+          ? "Nothing recorded"
+          : costs.map((line) => `${labels[line.kind] ?? line.kind} KES ${line.amountKes.toLocaleString("en-KE")}`).join(" · ");
+    }
+    return { phone, valueOverTime };
   });
 
   app.get("/api/stock", async (request) => {

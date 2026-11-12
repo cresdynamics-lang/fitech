@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { roleAccess } from "shared";
+import { DevicesBoard } from "./Devices";
 import { MoneyBoard } from "./Money";
 import { NewSale } from "./NewSale";
 import { PartnersBoard } from "./Partners";
-import { StaffBoard } from "./Staff";
+import { PerformanceBoard, StaffBoard } from "./Staff";
 import { StockBoard, type StockUnit } from "./StockPick";
 import type { SignedInUser } from "./SignIn";
 
@@ -26,16 +27,17 @@ const NAV: NavItem[] = [
   { id: "customers", label: "Customers", mark: "Cu" },
   { id: "lipa", label: "Lipa", mark: "Li" },
   { id: "money", label: "Money", mark: "Mo" },
-  { id: "staff", label: "Staff", mark: "St" },
+  { id: "performance", label: "Performance", mark: "Pe" },
   { id: "assistant", label: "AI Assistant", mark: "AI" },
+  { id: "staff", label: "Staff & devices", mark: "St" },
   { id: "activity", label: "Activity", mark: "Ac" },
   { id: "settings", label: "Settings", mark: "Se" },
 ];
 
 const SIDE: Record<Role, string[]> = {
   OWNER: NAV.map((item) => item.id),
-  MANAGER: ["today", "sales", "deliveries", "inventory", "devices", "repairs", "partners", "customers", "lipa", "staff", "assistant"],
-  CASHIER: ["today", "sales", "deliveries", "repairs", "customers", "lipa", "assistant"],
+  MANAGER: ["today", "sales", "deliveries", "inventory", "devices", "repairs", "partners", "customers", "lipa", "performance", "staff", "assistant"],
+  CASHIER: ["today", "sales", "deliveries", "repairs", "customers", "lipa", "performance", "assistant"],
   INVENTORY: ["today", "inventory", "devices", "repairs", "assistant"],
 };
 
@@ -387,6 +389,12 @@ function Screen({
   }
   if (section === "money") {
     return <MoneyBoard />;
+  }
+  if (section === "devices") {
+    return <DevicesBoard owner={role === "OWNER"} onRegisterBack={onRegisterBack} />;
+  }
+  if (section === "performance") {
+    return <PerformanceBoard role={role} name={name} />;
   }
   if (section === "staff") {
     return <StaffBoard role={role} onRegisterBack={onRegisterBack} />;
