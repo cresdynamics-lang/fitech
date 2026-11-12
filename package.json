@@ -1,0 +1,21 @@
+{
+  "name": "fitech",
+  "private": true,
+  "packageManager": "pnpm@12.18.0",
+  "engines": {
+    "node": "20.x"
+  },
+  "scripts": {
+    "lint": "node scripts/not-implemented.js 0.6 lint",
+    "typecheck": "corepack pnpm --filter api typecheck",
+    "test": "corepack pnpm --filter api test",
+    "test:unit": "corepack pnpm --filter api test",
+    "db:migrate": "corepack pnpm --filter api db:migrate",
+    "db:seed": "corepack pnpm --filter api db:seed",
+    "test:leak": "node scripts/not-implemented.js 0.5 test:leak",
+    "test:e2e": "node scripts/not-implemented.js 0.6 test:e2e",
+    "build": "node scripts/not-implemented.js 0.6 build",
+    "dev:api": "node scripts/not-implemented.js 0.2 dev:api",
+    "dev:web": "node scripts/not-implemented.js 0.6 dev:web"
+  }
+}
