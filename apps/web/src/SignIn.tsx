@@ -5,6 +5,7 @@ export type SignedInUser = {
   name: string;
   email: string;
   role: string;
+  grants?: string[];
 };
 
 type SignInProps = {

@@ -14,10 +14,15 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres, { type Sql } from "postgres";
+import { listPartners, createPartner } from "./partners.js";
+import { createStaff, listStaff, revokeAllDevices, revokeDevice, setGrant } from "./staff.js";
+import { borrowPhone, listStock } from "./stock.js";
+import { moneyPicture } from "./money.js";
 import {
   CHALLENGE_TTL_MS,
   codeSignInSchema,
   deviceSetupSchema,
+  roleAccess,
   EMAIL_CODE_TTL_MS,
   LOGIN_FAILURES_BEFORE_LOCK,
   passwordSignInSchema,
@@ -198,11 +203,23 @@ async function openSession(
   reply.setCookie(SESSION_COOKIE, token, cookieOptions());
   await recordAttempt(sql, user.email, user.id, true);
   await writeAudit(sql, "sign-in", user.email, user.id);
-  return publicUser(user);
+  return await publicUser(sql, user);
 }
 
-function publicUser(user: UserRow) {
-  return { id: user.id, name: user.name, email: user.email, role: user.role_code };
+async function publicUser(sql: Sql, user: UserRow) {
+  const grants = await sql<{ permission_key: string }[]>`
+    select permission_key
+    from permission_grant
+    where user_id = ${user.id}
+      and (expires_at is null or expires_at > now())
+  `;
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role_code,
+    grants: grants.map((row) => row.permission_key),
+  };
 }
 
 async function failSignIn(sql: Sql, email: string, userId: string | null, whatHappened: string) {
@@ -299,6 +316,200 @@ export async function buildApp(databaseUrl: string) {
   });
 
   app.get("/api/health", async () => ({ ok: true }));
+
+  async function signedIn(request: FastifyRequest): Promise<{ id: string; role: string }> {
+    const session = await readSession(sql, request.cookies[SESSION_COOKIE]);
+    const rows = await sql<{ id: string; role: string }[]>`
+      select u.id, r.code as role
+      from app_user u
+      join role r on r.id = u.role_id
+      where u.id = ${session.user_id}
+    `;
+    const actor = rows[0];
+    if (!actor) {
+      throw new AuthError(401, "Sign in required.");
+    }
+    return actor;
+  }
+
+  async function allows(actor: { id: string; role: string }, label: string): Promise<boolean> {
+    const grants = await sql<{ permission_key: string }[]>`
+      select permission_key
+      from permission_grant
+      where user_id = ${actor.id}
+        and (expires_at is null or expires_at > now())
+    `;
+    const row = roleAccess(
+      actor.role,
+      grants.map((item) => item.permission_key),
+    ).find((item) => item.label === label);
+    return row?.access === "on" || row?.access === "collect";
+  }
+
+  function textField(body: unknown, key: string): string {
+    if (!body || typeof body !== "object" || !(key in body)) {
+      return "";
+    }
+    const value = (body as Record<string, unknown>)[key];
+    return typeof value === "string" ? value : "";
+  }
+
+  function textList(body: unknown, key: string): string[] | null {
+    if (!body || typeof body !== "object" || !(key in body)) {
+      return null;
+    }
+    const value = (body as Record<string, unknown>)[key];
+    if (!Array.isArray(value)) {
+      return null;
+    }
+    return value.filter((item): item is string => typeof item === "string");
+  }
+
+  app.get("/api/money", async (request) => {
+    const actor = await signedIn(request);
+    if (actor.role !== "OWNER") {
+      throw new AuthError(403, "Money is for the owner.");
+    }
+    const query = request.query as { period?: unknown };
+    const period = query.period === "last" ? "last" : "month";
+    return moneyPicture(sql, period);
+  });
+
+  app.get("/api/stock", async (request) => {
+    await readSession(sql, request.cookies[SESSION_COOKIE]);
+    const query = request.query as { name?: unknown };
+    const name = typeof query.name === "string" ? query.name : "";
+    const stock = await listStock(sql, name);
+    return { stock };
+  });
+
+  app.post("/api/stock/borrow", async (request) => {
+    const actor = await signedIn(request);
+    if (!(await allows(actor, "Record a sale and its payment path"))) {
+      throw new AuthError(403, "This person does not record a sale.");
+    }
+    const result = await borrowPhone(sql, actor.id, {
+      partnerId: textField(request.body, "partnerId"),
+      model: textField(request.body, "model"),
+      colour: textField(request.body, "colour"),
+      storage: textField(request.body, "storage"),
+      condition: textField(request.body, "condition"),
+      imei: textField(request.body, "imei"),
+      due: textField(request.body, "due"),
+    });
+    if (!result.ok) {
+      throw new AuthError(result.status, result.error);
+    }
+    await writeAudit(sql, "phone borrowed in from a partner", result.value.source, actor.id);
+    return { phone: result.value };
+  });
+
+  app.get("/api/partners", async (request) => {
+    await signedIn(request);
+    return listPartners(sql);
+  });
+
+  app.post("/api/partners", async (request) => {
+    const actor = await signedIn(request);
+    if (!(await allows(actor, "Give or borrow phones with dealers"))) {
+      throw new AuthError(403, "This person does not add a partner.");
+    }
+    const result = await createPartner(sql, {
+      dealer: textField(request.body, "dealer"),
+      phone: textField(request.body, "phone"),
+      place: textField(request.body, "place"),
+    });
+    if (!result.ok) {
+      throw new AuthError(result.status, result.error);
+    }
+    await writeAudit(sql, "partner added", result.value.dealer, actor.id);
+    return { partner: result.value };
+  });
+
+  app.get("/api/staff", async (request) => {
+    const actor = await signedIn(request);
+    if (actor.role !== "OWNER" && actor.role !== "MANAGER") {
+      throw new AuthError(403, "Staff is not on this role.");
+    }
+    const people = await listStaff(sql);
+    return { people };
+  });
+
+  app.post("/api/staff", async (request) => {
+    const actor = await signedIn(request);
+    if (actor.role !== "OWNER") {
+      throw new AuthError(403, "Only the owner creates accounts.");
+    }
+    const result = await createStaff(sql, {
+      name: textField(request.body, "name"),
+      email: textField(request.body, "email"),
+      password: textField(request.body, "password"),
+      role: textField(request.body, "role"),
+      grants: textList(request.body, "grants"),
+      grantedBy: actor.id,
+    });
+    if (!result.ok) {
+      throw new AuthError(result.status, result.error);
+    }
+    await writeAudit(sql, "staff account created", result.value.email, actor.id);
+    return { person: result.value };
+  });
+
+  app.post("/api/staff/:userId/grants", async (request) => {
+    const actor = await signedIn(request);
+    if (actor.role !== "OWNER") {
+      throw new AuthError(403, "Only the owner changes permissions.");
+    }
+    const params = request.params as { userId?: string };
+    const enabled = Boolean(
+      request.body && typeof request.body === "object" && (request.body as { enabled?: unknown }).enabled === true,
+    );
+    const result = await setGrant(sql, {
+      userId: params.userId ?? "",
+      key: textField(request.body, "key"),
+      enabled,
+      grantedBy: actor.id,
+    });
+    if (!result.ok) {
+      throw new AuthError(result.status, result.error);
+    }
+    const key = textField(request.body, "key");
+    await writeAudit(
+      sql,
+      enabled ? `permission granted ${key}` : `permission ended ${key}`,
+      result.value.email,
+      actor.id,
+    );
+    return { ok: true };
+  });
+
+  app.post("/api/staff/:userId/devices/revoke-all", async (request) => {
+    const actor = await signedIn(request);
+    if (actor.role !== "OWNER") {
+      throw new AuthError(403, "Only the owner changes devices.");
+    }
+    const params = request.params as { userId?: string };
+    const result = await revokeAllDevices(sql, params.userId ?? "");
+    if (!result.ok) {
+      throw new AuthError(result.status, result.error);
+    }
+    await writeAudit(sql, "all devices revoked and sessions signed out", result.value.email, actor.id);
+    return { ok: true };
+  });
+
+  app.post("/api/staff/:userId/devices/:deviceId/revoke", async (request) => {
+    const actor = await signedIn(request);
+    if (actor.role !== "OWNER") {
+      throw new AuthError(403, "Only the owner changes devices.");
+    }
+    const params = request.params as { userId?: string; deviceId?: string };
+    const result = await revokeDevice(sql, params.userId ?? "", params.deviceId ?? "");
+    if (!result.ok) {
+      throw new AuthError(result.status, result.error);
+    }
+    await writeAudit(sql, "device revoked and sessions signed out", result.value.email, actor.id);
+    return { ok: true };
+  });
 
   app.post("/api/auth/password", async (request, reply) => {
     const parsed = passwordSignInSchema.safeParse(request.body);
@@ -433,7 +644,7 @@ export async function buildApp(databaseUrl: string) {
     try {
       const session = await readSession(sql, request.cookies[SESSION_COOKIE]);
       if (session.user_id === user.id) {
-        return { user: publicUser(user) };
+        return { user: await publicUser(sql, user) };
       }
     } catch {
       // No current session. The new PIN opens one.
@@ -759,7 +970,7 @@ export async function buildApp(databaseUrl: string) {
     if (!user) {
       throw new AuthError(401, "Sign in required.");
     }
-    return { user: publicUser(user) };
+    return { user: await publicUser(sql, user) };
   });
 
   app.get("/api/auth/step-up", async (request) => {
